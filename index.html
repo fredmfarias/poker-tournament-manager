@@ -97,7 +97,7 @@
       <div class="panel-header">
         <h2 id="tournament-title">Torneio</h2>
         <div class="button-row">
-          <button id="back-to-config">Voltar à Configuração</button>
+          <button id="back-to-config">Resetar</button>
           <button id="start-pause-tournament">Iniciar Torneio</button>
         </div>
       </div>
@@ -129,13 +129,12 @@
           <h3>Status</h3>
           <div class="stats-grid">
             <div class="stats-item">
-              <span class="label">Jogadores:</span>
-              <span id="players" class="value">0</span>
-              <div class="control-buttons">
-                <button id="add-player">+</button>
-                <!--<button id="remove-player">-</button>-->
+                <span class="label">Buy-in:</span>
+                <span id="buyin" class="value">0</span>
+                <div class="control-buttons">
+                  <button id="add-buyin">+</button>
+                </div>
               </div>
-            </div>
             <div class="stats-item">
               <span class="label">Re-buys:</span>
               <span id="rebuys" class="value">0</span>
@@ -150,6 +149,13 @@
                 <button id="add-addon">+</button>
               </div>
             </div>
+            <div class="stats-item">
+                <span class="label">Jogadores:</span>
+                <span id="players" class="value">0</span>
+                <div class="control-buttons">
+                  <button id="remove-player">-</button>
+                </div>
+              </div>
           </div>
         </div>
         

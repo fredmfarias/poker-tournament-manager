@@ -1,3 +1,5 @@
+const blindSound = new Audio('https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg');
+
 document.addEventListener('DOMContentLoaded', () => {
   // Elementos do DOM
   const tournamentForm = document.getElementById('tournament-form');
@@ -13,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const startPauseTournamentBtn = document.getElementById('start-pause-tournament');
   
   // Botões de controle do torneio
-  const addPlayerBtn = document.getElementById('add-player');
+  const addBuyinBtn = document.getElementById('add-buyin');
   const removePlayerBtn = document.getElementById('remove-player');
   const addRebuyBtn = document.getElementById('add-rebuy');
   const addAddonBtn = document.getElementById('add-addon');
@@ -24,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const totalTimeDisplay = document.getElementById('total-time');
   const blindsDisplay = document.getElementById('blinds');
   const nextIncreaseDisplay = document.getElementById('next-increase');
+  const buyinDisplay = document.getElementById('buyin');
   const playersDisplay = document.getElementById('players');
   const rebuysDisplay = document.getElementById('rebuys');
   const addonsDisplay = document.getElementById('addons');
@@ -53,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     level: 1,
     totalSeconds: 0,
     remainingSeconds: 0,
+    buyin: 0,
     players: 0,
     rebuys: 0,
     addons: 0,
@@ -138,10 +142,13 @@ document.addEventListener('DOMContentLoaded', () => {
     tournament.remainingSeconds = config.timeToIncrease * 60;
     tournament.smallBlind = Math.floor(config.initBlind / 2);
     tournament.bigBlind = config.initBlind;
+    tournament.buyin = 0;
     tournament.players = 0;
     tournament.rebuys = 0;
     tournament.addons = 0;
     
+    startPauseTournamentBtn.textContent = 'Iniciar Torneio';
+
     return true;
   }
   
@@ -195,12 +202,13 @@ document.addEventListener('DOMContentLoaded', () => {
     nextIncreaseDisplay.textContent = formatTime(tournament.remainingSeconds);
     
     // Atualizar status
+    buyinDisplay.textContent = tournament.buyin;
     playersDisplay.textContent = tournament.players;
     rebuysDisplay.textContent = tournament.rebuys;
     addonsDisplay.textContent = tournament.addons;
     
     // Calcular e atualizar estatísticas
-    const totalBuyIns = tournament.players + tournament.rebuys;
+    const totalBuyIns = tournament.buyin + tournament.rebuys;
     const totalChips = (totalBuyIns * tournament.buyInChips) + (tournament.addons * tournament.addonChips);
     const totalPrize = (totalBuyIns * tournament.buyInValue) + (tournament.addons * tournament.addonValue);
     const averageStack = tournament.players > 0 ? Math.floor(totalChips / tournament.players) : 0;
@@ -270,6 +278,9 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Verificar se é hora de aumentar os blinds
       if (tournament.remainingSeconds <= 0) {
+        // Tocar o som de alerta
+        blindSound.play().catch(e => console.log("Erro ao reproduzir som:", e));
+
         tournament.level++;
         tournament.smallBlind += tournament.increase;
         tournament.bigBlind = tournament.smallBlind * 2;
@@ -359,18 +370,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Adicionar jogador
-  addPlayerBtn.addEventListener('click', () => {
+  addBuyinBtn.addEventListener('click', () => {
+    tournament.buyin++;
     tournament.players++;
     updateTournamentPanel();
   });
   
   // Remover jogador
-  /*removePlayerBtn.addEventListener('click', () => {
+  removePlayerBtn.addEventListener('click', () => {
     if (tournament.players > 0) {
       tournament.players--;
-      updateTournamentPanel();
     }
-  });*/
+  });
   
   // Adicionar rebuy
   addRebuyBtn.addEventListener('click', () => {
