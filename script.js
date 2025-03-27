@@ -122,10 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Validar se a soma dos prêmios mais o home pot é 100%
     const prizeSum = config.prizeDistribution.reduce((sum, value) => sum + value, 0);
-    const totalSum = prizeSum + config.homePot;
     
-    if (Math.abs(totalSum - 100) > 0.01) {
-      prizeSumWarning.textContent = `A soma dos prêmios e do home pot deve ser 100%. Atual: ${totalSum.toFixed(2)}%`;
+    if (Math.abs(prizeSum - 100) > 0.01) {
+      prizeSumWarning.textContent = `A soma dos prêmios deve ser 100%. Atual: ${prizeSum.toFixed(2)}%`;
       return false;
     }
     
