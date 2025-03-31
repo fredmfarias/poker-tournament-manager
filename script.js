@@ -1,5 +1,71 @@
 const blindSound = new Audio('https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg');
 
+// Pré-carregar o som para melhorar a resposta
+blindSound.load();
+
+// Função para tocar o som com várias tentativas para contornar restrições do navegador
+function playBlindSound() {
+  // Configurar som para melhor compatibilidade
+  blindSound.volume = 1.0;
+  blindSound.currentTime = 0;
+  
+  const playPromise = blindSound.play();
+  
+  // Tratar erro de reprodução 
+  if (playPromise !== undefined) {
+    playPromise.catch(error => {
+      console.log("Erro ao reproduzir som:", error);
+      
+      // Segunda tentativa com delay
+      setTimeout(() => {
+        blindSound.play().catch(e => {
+          console.log("Segunda tentativa falhou:", e);
+          
+          // Criar notificação visual como backup
+          showBlindNotification();
+        });
+      }, 200);
+    });
+  }
+
+  showBlindNotification();
+}
+
+// Notificação visual como backup quando o som falha
+function showBlindNotification() {
+  // Criar elemento de notificação
+  const notification = document.createElement('div');
+  notification.className = 'blind-notification';
+  notification.textContent = `BLIND AUMENTOU!`;
+  notification.style.position = 'fixed';
+  notification.style.top = '20px';
+  notification.style.left = '50%';
+  notification.style.transform = 'translateX(-50%)';
+  notification.style.backgroundColor = '#ff5722';
+  notification.style.color = 'white';
+  notification.style.padding = '12px 20px';
+  notification.style.borderRadius = '4px';
+  notification.style.zIndex = '1000';
+  notification.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
+  
+  document.body.appendChild(notification);
+  
+  // Fazer a notificação piscar para chamar atenção
+  let visible = true;
+  const blinkInterval = setInterval(() => {
+    notification.style.visibility = visible ? 'visible' : 'hidden';
+    visible = !visible;
+  }, 500);
+  
+  // Remover após alguns segundos
+  setTimeout(() => {
+    clearInterval(blinkInterval);
+    if (notification.parentNode) {
+      notification.parentNode.removeChild(notification);
+    }
+  }, 5000);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Elementos do DOM
   const tournamentForm = document.getElementById('tournament-form');
@@ -69,7 +135,10 @@ document.addEventListener('DOMContentLoaded', () => {
     lastUpdateTimestamp: 0,
     pausedTotalTime: 0,
     pausedRemainingTime: 0,
-    timeHiddenAt: 0
+    timeHiddenAt: 0,
+    
+    // Controle de som
+    pendingBlindChanges: []
   };
   
   // Carregar configurações salvas
@@ -152,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tournament.addons = 0;
     tournament.pausedTotalTime = 0;
     tournament.pausedRemainingTime = config.timeToIncrease * 60;
+    tournament.pendingBlindChanges = [];
     
     startPauseTournamentBtn.textContent = 'Iniciar Torneio';
 
@@ -295,13 +365,32 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Verificar se é hora de aumentar os blinds
     if (tournament.remainingSeconds <= 0) {
-      // Tocar o som de alerta
-      blindSound.play().catch(e => console.log("Erro ao reproduzir som:", e));
-
+      // Aumentar o nível e atualizar blinds
       tournament.level++;
       tournament.smallBlind += tournament.increase;
       tournament.bigBlind = tournament.smallBlind * 2;
       tournament.remainingSeconds = tournament.timeToIncrease * 60;
+      
+      // Registrar o aumento de blind para rastreamento
+      const blindChangeRecord = {
+        timestamp: Date.now(),
+        level: tournament.level,
+        smallBlind: tournament.smallBlind,
+        bigBlind: tournament.bigBlind,
+        soundPlayed: false
+      };
+      
+      // Adicionar à lista de mudanças pendentes
+      tournament.pendingBlindChanges.push(blindChangeRecord);
+      
+      // Salvar no localStorage para persistência
+      localStorage.setItem('pendingBlindChanges', JSON.stringify(tournament.pendingBlindChanges));
+      
+      // Sempre tentar tocar o som, independentemente da visibilidade
+      playBlindSound();
+      
+      // Marcar esta mudança como reproduzida
+      blindChangeRecord.soundPlayed = true;
     }
     
     // Atualizar o painel com os novos valores
@@ -392,14 +481,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Atualizar os tempos para compensar o período oculto
         if (hiddenTime > 0) {
           tournament.totalSeconds += hiddenTime;
+          const previousRemainingSeconds = tournament.remainingSeconds;
           tournament.remainingSeconds -= hiddenTime;
           
           // Verificar se ocorreram mudanças de nível durante o tempo oculto
+          const levelsBefore = tournament.level;
+          let blindsChanged = false;
+          
           while (tournament.remainingSeconds <= 0) {
             tournament.level++;
             tournament.smallBlind += tournament.increase;
             tournament.bigBlind = tournament.smallBlind * 2;
             tournament.remainingSeconds += tournament.timeToIncrease * 60;
+            blindsChanged = true;
+          }
+          
+          // Se houve mudança de nível enquanto a página estava oculta
+          if (blindsChanged) {
+            // Tocar o som quando a página volta à visibilidade
+            playBlindSound();
+            
+            // Registrar as mudanças
+            const blindChangeRecord = {
+              timestamp: Date.now(),
+              level: tournament.level,
+              smallBlind: tournament.smallBlind,
+              bigBlind: tournament.bigBlind
+            };
+            
+            // Atualizar a notificação visual para informar a mudança mais recente
+            showBlindNotification();
           }
           
           // Atualizar o painel
@@ -410,8 +521,114 @@ document.addEventListener('DOMContentLoaded', () => {
         tournament.lastUpdateTimestamp = null;
         tournament.animationFrameId = requestAnimationFrame(updateTimer);
       }
+      
+      // Verificar e reproduzir mudanças de blind pendentes
+      const pendingChanges = JSON.parse(localStorage.getItem('pendingBlindChanges') || '[]');
+      if (pendingChanges.length > 0) {
+        // Encontrar mudanças não reproduzidas
+        const unplayedChanges = pendingChanges.filter(change => !change.soundPlayed);
+        
+        if (unplayedChanges.length > 0) {
+          // Tocar o som apenas uma vez para todas as mudanças pendentes
+          playBlindSound();
+          
+          // Marcar todas como reproduzidas
+          pendingChanges.forEach(change => change.soundPlayed = true);
+          localStorage.setItem('pendingBlindChanges', JSON.stringify(pendingChanges));
+        }
+      }
     }
   });
+  
+  // Setup de Worker para continuar contagem em segundo plano
+  if (window.Worker) {
+    try {
+      const timerWorker = new Worker(URL.createObjectURL(new Blob([`
+        let timerInterval;
+        
+        self.onmessage = function(e) {
+          if (e.data.command === 'start') {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+              self.postMessage({type: 'tick'});
+            }, 1000);
+          } else if (e.data.command === 'stop') {
+            clearInterval(timerInterval);
+          }
+        };
+      `], {type: 'text/javascript'})));
+
+      timerWorker.onmessage = function(e) {
+        if (e.data.type === 'tick' && tournament.isRunning && document.hidden) {
+          // Processar tick em segundo plano
+          tournament.totalSeconds += 1;
+          tournament.remainingSeconds -= 1;
+          
+          // Verificar mudanças de blind
+          if (tournament.remainingSeconds <= 0) {
+            tournament.level++;
+            tournament.smallBlind += tournament.increase;
+            tournament.bigBlind = tournament.smallBlind * 2;
+            tournament.remainingSeconds = tournament.timeToIncrease * 60;
+            
+            // Registrar mudança para notificação quando visível
+            const blindChangeRecord = {
+              timestamp: Date.now(),
+              level: tournament.level,
+              smallBlind: tournament.smallBlind,
+              bigBlind: tournament.bigBlind,
+              soundPlayed: false
+            };
+            
+            // Salvar no localStorage
+            const pendingChanges = JSON.parse(localStorage.getItem('pendingBlindChanges') || '[]');
+            pendingChanges.push(blindChangeRecord);
+            localStorage.setItem('pendingBlindChanges', JSON.stringify(pendingChanges));
+          }
+        }
+      };
+      
+      // Iniciar e parar worker conforme estado do torneio
+      function updateWorkerState() {
+        if (tournament.isRunning) {
+          timerWorker.postMessage({command: 'start'});
+        } else {
+          timerWorker.postMessage({command: 'stop'});
+        }
+      }
+      
+      // Monitorar mudanças de estado
+      const originalStartTimer = startTimer;
+      startTimer = function() {
+        originalStartTimer();
+        updateWorkerState();
+      };
+      
+      const originalPauseTimer = pauseTimer;
+      pauseTimer = function() {
+        originalPauseTimer();
+        updateWorkerState();
+      };
+    } catch (e) {
+      console.log("Web Worker não suportado ou erro:", e);
+    }
+  }
+  
+  // Habilitar o som ao primeiro clique do usuário na página (para contornar restrições de autoplay)
+  document.addEventListener('click', function initialUserInteraction() {
+    // Tentar reproduzir e pausar imediatamente (em volume 0) para habilitar o áudio
+    blindSound.volume = 0;
+    blindSound.play().then(() => {
+      blindSound.pause();
+      blindSound.currentTime = 0;
+      blindSound.volume = 1.0;
+    }).catch(e => {
+      console.log("Não foi possível habilitar áudio automaticamente:", e);
+    });
+    
+    // Remover esse listener após a primeira interação
+    document.removeEventListener('click', initialUserInteraction);
+  }, { once: true });
   
   // *********** Event Listeners ***********
   
@@ -486,4 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tournament.remainingSeconds = savedConfig.timeToIncrease * 60;
     tournament.pausedRemainingTime = savedConfig.timeToIncrease * 60;
   }
+  
+  // Carregar quaisquer mudanças de blind pendentes
+  tournament.pendingBlindChanges = JSON.parse(localStorage.getItem('pendingBlindChanges') || '[]');
 });
