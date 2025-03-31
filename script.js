@@ -63,8 +63,13 @@ document.addEventListener('DOMContentLoaded', () => {
     smallBlind: 0,
     bigBlind: 0,
     
-    // Temporizadores
-    timer: null
+    // Temporizadores e timestamps
+    animationFrameId: null,
+    startTimestamp: 0,
+    lastUpdateTimestamp: 0,
+    pausedTotalTime: 0,
+    pausedRemainingTime: 0,
+    timeHiddenAt: 0
   };
   
   // Carregar configurações salvas
@@ -145,6 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tournament.players = 0;
     tournament.rebuys = 0;
     tournament.addons = 0;
+    tournament.pausedTotalTime = 0;
+    tournament.pausedRemainingTime = config.timeToIncrease * 60;
     
     startPauseTournamentBtn.textContent = 'Iniciar Torneio';
 
@@ -169,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const label = document.createElement('label');
       label.htmlFor = `prize-position-${i+1}`;
-      label.textContent = `Posição ${i+1} (%):`;
+      label.textContent = `Posição ${i+1} (%)`;
       
       const input = document.createElement('input');
       input.type = 'number';
@@ -267,39 +274,67 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
+  // Função de atualização do temporizador baseada em timestamps
+  function updateTimer(timestamp) {
+    if (!tournament.isRunning) return;
+    
+    if (!tournament.lastUpdateTimestamp) {
+      // Primeira execução após iniciar/continuar
+      tournament.lastUpdateTimestamp = timestamp;
+      tournament.animationFrameId = requestAnimationFrame(updateTimer);
+      return;
+    }
+    
+    // Calcular o tempo decorrido desde a última atualização (em segundos)
+    const elapsed = (timestamp - tournament.lastUpdateTimestamp) / 1000;
+    tournament.lastUpdateTimestamp = timestamp;
+    
+    // Atualizar os contadores de tempo
+    tournament.totalSeconds += elapsed;
+    tournament.remainingSeconds -= elapsed;
+    
+    // Verificar se é hora de aumentar os blinds
+    if (tournament.remainingSeconds <= 0) {
+      // Tocar o som de alerta
+      blindSound.play().catch(e => console.log("Erro ao reproduzir som:", e));
+
+      tournament.level++;
+      tournament.smallBlind += tournament.increase;
+      tournament.bigBlind = tournament.smallBlind * 2;
+      tournament.remainingSeconds = tournament.timeToIncrease * 60;
+    }
+    
+    // Atualizar o painel com os novos valores
+    updateTournamentPanel();
+    
+    // Continuar o loop de animação
+    tournament.animationFrameId = requestAnimationFrame(updateTimer);
+  }
+  
   // Iniciar o temporizador do torneio
   function startTimer() {
-    if (tournament.timer) clearInterval(tournament.timer);
-    
-    tournament.timer = setInterval(() => {
-      tournament.totalSeconds++;
-      tournament.remainingSeconds--;
-      
-      // Verificar se é hora de aumentar os blinds
-      if (tournament.remainingSeconds <= 0) {
-        // Tocar o som de alerta
-        blindSound.play().catch(e => console.log("Erro ao reproduzir som:", e));
-
-        tournament.level++;
-        tournament.smallBlind += tournament.increase;
-        tournament.bigBlind = tournament.smallBlind * 2;
-        tournament.remainingSeconds = tournament.timeToIncrease * 60;
-      }
-      
-      updateTournamentPanel();
-    }, 1000);
+    if (tournament.isRunning) return;
     
     tournament.isRunning = true;
+    tournament.lastUpdateTimestamp = null;
+    tournament.animationFrameId = requestAnimationFrame(updateTimer);
+    
     startPauseTournamentBtn.textContent = 'Pausar Torneio';
   }
   
   // Pausar o temporizador
   function pauseTimer() {
-    if (tournament.timer) {
-      clearInterval(tournament.timer);
-      tournament.timer = null;
+    if (!tournament.isRunning) return;
+    
+    if (tournament.animationFrameId) {
+      cancelAnimationFrame(tournament.animationFrameId);
+      tournament.animationFrameId = null;
     }
+    
     tournament.isRunning = false;
+    tournament.pausedTotalTime = tournament.totalSeconds;
+    tournament.pausedRemainingTime = tournament.remainingSeconds;
+    
     startPauseTournamentBtn.textContent = 'Continuar Torneio';
   }
   
@@ -309,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = seconds % 60;
+    const remainingSeconds = Math.floor(seconds % 60);
     
     if (hours > 0) {
       return `${padZero(hours)}:${padZero(minutes)}:${padZero(remainingSeconds)}`;
@@ -336,6 +371,47 @@ document.addEventListener('DOMContentLoaded', () => {
     tournamentSection.style.display = 'none';
     configSection.style.display = 'block';
   }
+  
+  // Tratar eventos de visibilidade da página
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // A página ficou oculta (tela bloqueada ou aba em segundo plano)
+      tournament.timeHiddenAt = performance.now();
+      
+      // Pausamos o loop de animação, mas não o estado do torneio
+      if (tournament.isRunning && tournament.animationFrameId) {
+        cancelAnimationFrame(tournament.animationFrameId);
+        tournament.animationFrameId = null;
+      }
+    } else {
+      // A página voltou a ficar visível
+      if (tournament.isRunning) {
+        // Calcular quanto tempo a página ficou oculta
+        const hiddenTime = (performance.now() - tournament.timeHiddenAt) / 1000;
+        
+        // Atualizar os tempos para compensar o período oculto
+        if (hiddenTime > 0) {
+          tournament.totalSeconds += hiddenTime;
+          tournament.remainingSeconds -= hiddenTime;
+          
+          // Verificar se ocorreram mudanças de nível durante o tempo oculto
+          while (tournament.remainingSeconds <= 0) {
+            tournament.level++;
+            tournament.smallBlind += tournament.increase;
+            tournament.bigBlind = tournament.smallBlind * 2;
+            tournament.remainingSeconds += tournament.timeToIncrease * 60;
+          }
+          
+          // Atualizar o painel
+          updateTournamentPanel();
+        }
+        
+        // Reiniciar o loop de animação
+        tournament.lastUpdateTimestamp = null;
+        tournament.animationFrameId = requestAnimationFrame(updateTimer);
+      }
+    }
+  });
   
   // *********** Event Listeners ***********
   
@@ -379,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
   removePlayerBtn.addEventListener('click', () => {
     if (tournament.players > 0) {
       tournament.players--;
+      updateTournamentPanel();
     }
   });
   
@@ -407,5 +484,6 @@ document.addEventListener('DOMContentLoaded', () => {
     tournament.smallBlind = Math.floor(savedConfig.initBlind / 2);
     tournament.bigBlind = savedConfig.initBlind;
     tournament.remainingSeconds = savedConfig.timeToIncrease * 60;
+    tournament.pausedRemainingTime = savedConfig.timeToIncrease * 60;
   }
 });
